@@ -15,28 +15,28 @@
 #define MESH_ROLE_GATEWAY 0
 #endif
 
-#define MESH_REPORT_HZ       10   // radio rate at rest
-#define MESH_REPORT_HZ_MOVE  25   // while the node is being disturbed
-#define GATEWAY_LOCAL_HZ     50   // the gateway's own readings go over USB, which is cheap
+#define MESH_REPORT_HZ      10   // radio rate at rest
+#define MESH_REPORT_HZ_MOVE 25   // while the node is being disturbed
+#define GATEWAY_LOCAL_HZ    50   // the gateway's own readings go over USB, which is cheap
 
-#define DHT_PIN  4
-#define DHT_TYPE DHT11
-#define led 5
-#define MQ_AOUT 6
-#define MQ_DOUT 7
-#define MPU_ADDR 0x68 //I2C address of the MPU6500
-#define SDA_PIN 8
-#define SCL_PIN 9
+#define DHT_PIN           4
+#define DHT_TYPE          DHT11
+#define led               5
+#define MQ_AOUT           6
+#define MQ_DOUT           7
+#define MPU_ADDR          0x68   // I2C address of the MPU6500
+#define SDA_PIN           8
+#define SCL_PIN           9
 
 // MPU6500 registers
 #define REG_SMPLRT_DIV    0x19
-#define REG_CONFIG        0x1A   //DLPF for the gyro
+#define REG_CONFIG        0x1A   // DLPF for the gyro
 #define REG_GYRO_CONFIG   0x1B
 #define REG_ACCEL_CONFIG  0x1C
-#define REG_ACCEL_CONFIG2 0x1D   //DLPF for the accel
-#define REG_ACCEL_XOUT    0x3B   //first of 14 bytes: accel[6] temp[2] gyro[6]
-#define REG_PWR_MGMT_1    0x6B   //clears SLEEP bit to wake up the chip
-#define REG_WHO_AM_I      0x75   //confirm communication
+#define REG_ACCEL_CONFIG2 0x1D   // DLPF for the accel
+#define REG_ACCEL_XOUT    0x3B   // first of 14 bytes: accel[6] temp[2] gyro[6]
+#define REG_PWR_MGMT_1    0x6B   // clears SLEEP bit to wake up the chip
+#define REG_WHO_AM_I      0x75   // confirm communication
 
 #define ACCEL_LSB_PER_G  16384.0f   // +/-2 g range
 #define GYRO_LSB_PER_DPS    16.4f   // +/-2000 deg/s range. A flick of the wrist
@@ -46,18 +46,18 @@
                                     // reference, yaw keeps that error forever.
 #define GYRO_CLIP_COUNTS   32000    // raw magnitude that counts as pinned
 
-#define IMU_HZ        200   // fusion rate; the display only needs ~50, the
-                            // collapse detector wants every sample it can get
-#define IMU_CAL_N     400   // ~2 s of stillness at boot to learn the gyro bias
+#define IMU_HZ            200    // fusion rate; the display only needs ~50, the
+                                 // collapse detector wants every sample it can get
+#define IMU_CAL_N         400    // ~2 s of stillness at boot to learn the gyro bias
 
-#define I2S_WS 13
-#define I2S_SCK 12
-#define I2S_SD 11
+#define I2S_WS            13
+#define I2S_SCK           12
+#define I2S_SD            11
 
-//I2S Configuration
-#define I2S_SAMPLE_RATE 16000
-#define I2S_FRAMES 256   // 32-bit frames per i2s_read (1 KB of stack, ~16 ms of audio)
-#define MIC_GAIN_SHIFT 13
+// I2S Configuration
+#define I2S_SAMPLE_RATE   16000
+#define I2S_FRAMES        256    // 32-bit frames per i2s_read (1 KB of stack, ~16 ms of audio)
+#define MIC_GAIN_SHIFT    13
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
@@ -109,7 +109,7 @@ bool mpuBurst(int16_t out[7]) {
   return true;
 }
 
-// ------------------------------------------------------------------- fusion
+// -------------------------------------------------------------------- FUSION
 
 // Shared with loop(). Written only by imuTask, read only by loop(), both under
 // the spinlock so a print can never catch half of a quaternion.
@@ -277,7 +277,7 @@ static void imuTask(void *) {
   }
 }
 
-// ------------------------------------------------------------------- mesh
+// ---------------------------------------------------------------------- MESH
 
 static void buildReport(node_report_t *r, const Pose &p) {
   memset(r, 0, sizeof(*r));
@@ -434,7 +434,8 @@ void loop() {
   uint32_t now = millis();
   static uint32_t nextPose = 0, nextImuPrint = 0, nextSlow = 0, nextGas = 0, nextVol = 0, nextStatus = 0;
 
-  // --- microphone: i2s_read paces this loop at ~16 ms per 256-frame block ---
+  // --- microphone ---
+  // i2s_read paces this loop at ~16 ms per 256-frame block.
   int32_t audio_samples[I2S_FRAMES];
   size_t bytes_read;
   esp_err_t result = i2s_read(I2S_NUM_0, audio_samples, sizeof(audio_samples),
@@ -478,7 +479,7 @@ void loop() {
   p = pose;
   taskEXIT_CRITICAL(&poseMux);
 
-  // --- this node's own reading ---------------------------------------------
+  // --- this node's own reading ---
   // One JSON object per tick rather than a line per sensor: it is a single
   // consistent instant, and a new field costs the parser nothing.
   char line[320];
@@ -493,7 +494,8 @@ void loop() {
     if (mesh_report_to_json(&self, line, sizeof(line)) > 0) Serial.println(line);
   }
 
-  // --- everyone else's readings, arrived over the radio ---------------------
+  // --- everyone else's readings ---
+  // Arrived over the radio.
   node_report_t in;
   while (meshRx && xQueueReceive(meshRx, &in, 0) == pdTRUE) {
     if (mesh_report_to_json(&in, line, sizeof(line)) > 0) Serial.println(line);
@@ -522,7 +524,8 @@ void loop() {
                   (unsigned long)p.clipped);
   }
 
-  // --- MQ gas: the ADC is cheap but nothing here changes in 16 ms ---
+  // --- MQ gas ---
+  // The ADC is cheap but nothing here changes in 16 ms.
   if (now >= nextGas) {
     nextGas = now + 500;
     lastGasRaw = analogRead(MQ_AOUT);
@@ -530,7 +533,8 @@ void loop() {
     lastGas = !digitalRead(MQ_DOUT);
   }
 
-  // --- DHT11: the part itself only updates about once a second ---
+  // --- DHT11 ---
+  // The part itself only updates about once a second.
   if (now >= nextSlow) {
     nextSlow = now + 2000;
     lastHum  = dht.readHumidity();
