@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rescue Node Sensors</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --border: #e3e6eb; --text: #111418; --muted: #687080;
+    --grid: #edf0f3; --track: #eceff3;
+    --sound: #5b5bd6; --temp: #e2622b; --hum: #0e8fb0; --gasline: #8a6d1f;
+    --ok: #1d9a56; --ok-bg: #e5f6ec; --alert: #d92d20; --alert-bg: #fdeceb;
+    --warn: #b76e00; --warn-bg: #fdf3e1; --info: #3e63dd; --info-bg: #eaeffd;
+    --x: #e5484d; --y: #30a46c; --z: #3e63dd;
+    --stage-a: #fbfcfd; --stage-b: #e8ecf1; --grid-line: rgba(16, 24, 40, .10);
+    --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 2px 8px rgba(16, 24, 40, .04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0e12; --card: #15181d; --border: #252a32; --text: #eceef1; --muted: #939aa6;
+      --grid: #1f242b; --track: #242931;
+      --sound: #9194ff; --temp: #ff8a4c; --hum: #3cc4e6; --gasline: #e3b341;
+      --ok: #3dd68c; --ok-bg: #11291c; --alert: #ff6b6b; --alert-bg: #3a1716;
+      --warn: #ffb224; --warn-bg: #33250b; --info: #85a2ff; --info-bg: #17213d;
+      --x: #ff6b6b; --y: #3dd68c; --z: #85a2ff;
+      --stage-a: #1d2229; --stage-b: #111418; --grid-line: rgba(255, 255, 255, .07);
+      --shadow: none;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 40px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  h1 { font-size: 22px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  .sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+    font-size: 13px; font-weight: 550; background: var(--card); border: 1px solid var(--border); white-space: nowrap;
+  }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.ok .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); animation: pulse 2s infinite; }
+  .pill.warn .dot { background: var(--warn); }
+  .pill.alert .dot { background: var(--alert); }
+  .pill.info .dot { background: var(--info); box-shadow: 0 0 0 3px var(--info-bg); }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 5px transparent; } }
+
+  .nodes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .node {
+    display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
+    padding: 8px 14px; border-radius: 10px; cursor: pointer; font: inherit; text-align: left;
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+  }
+  .node b { font-size: 14px; font-weight: 650; }
+  .node span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .node.on { border-color: var(--info); box-shadow: 0 0 0 3px var(--info-bg); }
+  .node.stale { opacity: .5; }
+  .node.stale b::after { content: " ·"; color: var(--warn); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  @media (min-width: 760px) { .wide { grid-column: span 2; } }
+
+  .card {
+    position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 20px 16px; box-shadow: var(--shadow); min-width: 0;
+  }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
+  h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .badge {
+    font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+    color: var(--muted); background: var(--track); white-space: nowrap;
+  }
+  .badge.ok { color: var(--ok); background: var(--ok-bg); }
+  .badge.alert { color: var(--alert); background: var(--alert-bg); }
+
+  .value { display: flex; align-items: baseline; gap: 6px; margin: 10px 0 2px; font-variant-numeric: tabular-nums; }
+  .value .num { font-size: 40px; font-weight: 650; letter-spacing: -.02em; line-height: 1.1; }
+  .value .unit { color: var(--muted); font-size: 15px; font-weight: 500; }
+  .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; min-height: 19px; }
+
+  .meter { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; margin: 10px 0 4px; }
+  .meter > div { height: 100%; width: 0; border-radius: inherit; transition: width .4s ease; }
+
+  canvas { display: block; width: 100%; height: 88px; margin-top: 14px; }
+  .wide canvas { height: 120px; }
+
+  .axes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 12px 0 0; }
+  .axis { font-variant-numeric: tabular-nums; }
+  .axis .label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 550; }
+  .axis .label i { width: 10px; height: 3px; border-radius: 2px; background: var(--c); }
+  .axis .num { font-size: 26px; font-weight: 650; letter-spacing: -.01em; }
+  .axis .unit { color: var(--muted); font-size: 13px; margin-left: 3px; }
+
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pair .value { margin-top: 2px; }
+  .key { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 550; margin-top: 12px; }
+  .key i { width: 10px; height: 3px; border-radius: 2px; background: var(--c); }
+  canvas.mini { height: 48px; margin-top: 10px; }
+
+  .legend { color: var(--muted); font-size: 12px; margin-top: 8px; display: flex; justify-content: space-between; }
+
+  .empty {
+    display: none; position: absolute; inset: 52px 20px 16px; border-radius: 10px;
+    align-items: center; justify-content: center; text-align: center; padding: 12px;
+    color: var(--muted); font-size: 13px; background: var(--card);
+  }
+  .card.nodata .empty { display: flex; }
+  .card.stale .value, .card.stale .axes, .card.stale canvas { opacity: .45; }
+  .card.stale .card-head::after { content: "No recent data"; font-size: 12px; color: var(--warn); }
+  .card.stale .badge { display: none; }
+
+  footer {
+    display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; color: var(--muted); font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  footer b { color: var(--text); font-weight: 600; }
+
+  /* Orientation card: CSS 3D model of the GY-6500 */
+  .full { grid-column: 1 / -1; }
+  .orient { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 24px; align-items: center; margin-top: 12px; }
+  .stage {
+    position: relative; height: 360px; perspective: 1100px; perspective-origin: 50% 40%; overflow: hidden;
+    border-radius: 12px; background: radial-gradient(ellipse at 50% 35%, var(--stage-a), var(--stage-b));
+    cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  .stage.dragging { cursor: grabbing; }
+  .world { position: absolute; left: 50%; top: 45%; transform-style: preserve-3d; }
+  #board, #ground { position: absolute; left: 0; top: 0; transform-style: preserve-3d; }
+  .face { position: absolute; left: 0; top: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+  .face.shaded::after { content: ""; position: absolute; inset: 0; background: #000; opacity: var(--shade, 0); pointer-events: none; }
+  .plane {
+    position: absolute; left: 0; top: 0; width: 680px; height: 680px; margin: -340px 0 0 -340px;
+    transform: translateZ(-175px);
+    background-image: linear-gradient(var(--grid-line) 1.5px, transparent 1.5px),
+                      linear-gradient(90deg, var(--grid-line) 1.5px, transparent 1.5px);
+    background-size: 40px 40px; background-position: center;
+    -webkit-mask-image: radial-gradient(circle, #000 20%, transparent 66%);
+    mask-image: radial-gradient(circle, #000 20%, transparent 66%);
+  }
+  .plane::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 320px; height: 240px; margin: -120px 0 0 -160px;
+    border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .16), transparent);
+  }
+  .pcb-top { background: linear-gradient(135deg, #3069d0, #2152b0); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+  .pcb-top, .pcb-bottom { color: #fff; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .pcb-bottom { position: absolute; inset: 0; }
+  .silk-model { position: absolute; transform: translate(-50%, -50%) rotate(-90deg); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+  .silk-axes { position: absolute; overflow: visible; }
+  .pad {
+    position: absolute; width: 17px; height: 17px; margin: -8.5px 0 0 -8.5px; border-radius: 50%;
+    background: radial-gradient(circle, #1b1b1d 0 3.5px, #e3e6ea 4px 6.5px, #a9b1ba 7px);
+  }
+  .pin-label { position: absolute; transform: translateY(-50%); font-size: 10px; font-weight: 600; line-height: 1; white-space: nowrap; }
+  .hole {
+    position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+    background: radial-gradient(circle, #0c1a33 0 9px, #d6dbe1 9.5px 13px, transparent 13.5px);
+  }
+  .smd { position: absolute; width: 15px; height: 8px; margin: -4px 0 0 -7.5px; border-radius: 1px; }
+  .smd.vert { width: 8px; height: 15px; margin: -7.5px 0 0 -4px; }
+  .smd.cap { background: linear-gradient(90deg, #d3d7dd 0 3px, #b5864a 3px 12px, #d3d7dd 12px); }
+  .smd.res { background: linear-gradient(90deg, #d3d7dd 0 3px, #1d1d1f 3px 12px, #d3d7dd 12px); }
+  .smd.cap.vert { background: linear-gradient(180deg, #d3d7dd 0 3px, #b5864a 3px 12px, #d3d7dd 12px); }
+  .smd.res.vert { background: linear-gradient(180deg, #d3d7dd 0 3px, #1d1d1f 3px 12px, #d3d7dd 12px); }
+  .lead { position: absolute; width: 6px; height: 3.5px; margin: -1.75px 0 0 -3px; background: #cfd4da; }
+  .tant-band { position: absolute; left: 0; right: 0; top: 0; height: 5px; background: #b8861c; }
+  .chip-top {
+    background: #1c1d20; color: #8b919a; display: flex; align-items: center; justify-content: center; text-align: center;
+    font: 600 6px/1.15 ui-monospace, Menlo, monospace;
+  }
+  .chip-top.pin1::before { content: ""; position: absolute; left: 4px; top: 4px; width: 4px; height: 4px; border-radius: 50%; background: #50555d; }
+
+  .readout .value { margin-top: 2px; }
+  .angles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .angles .num { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .level { display: block; width: 120px; height: 120px; margin: 16px 0 4px; }
+  .hint { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 10px 0 0; }
+  .card.stale .orient { opacity: .6; }
+  @media (max-width: 760px) {
+    .orient { grid-template-columns: 1fr; gap: 12px; }
+    .stage { height: 300px; }
+  }
+
+  @media (max-width: 520px) {
+    .wrap { padding: 20px 16px 32px; }
+    .value .num { font-size: 34px; }
+    .axes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Rescue node sensors</h1>
+      <p class="sub">ESP32-S3 · live readings over USB serial</p>
+    </div>
+    <div class="pill" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+  </header>
+
+  <div class="nodes" id="nodeStrip" hidden></div>
+
+  <main class="grid">
+    <section class="card wide" id="card-volume">
+      <div class="card-head"><h2>Sound level</h2><span class="badge" id="loudBadge">—</span></div>
+      <div class="value"><span class="num" id="volume">—</span><span class="unit">peak-to-peak</span></div>
+      <canvas id="chart-volume"></canvas>
+      <div class="legend"><span>Last 60 s</span><span>Dashed line: LED threshold (32,000)</span></div>
+      <p class="empty"></p>
+    </section>
+
+    <section class="card" id="card-climate">
+      <div class="card-head"><h2>Climate (DHT11)</h2></div>
+      <div class="pair">
+        <div>
+          <div class="key"><i style="--c: var(--temp)"></i>Temperature</div>
+          <div class="value"><span class="num" id="temp">—</span><span class="unit">°C</span></div>
+        </div>
+        <div>
+          <div class="key"><i style="--c: var(--hum)"></i>Humidity</div>
+          <div class="value"><span class="num" id="humidity">—</span><span class="unit">%</span></div>
+        </div>
+      </div>
+      <canvas id="chart-temp" class="mini"></canvas>
+      <canvas id="chart-humidity" class="mini"></canvas>
+      <p class="empty"></p>
+    </section>
+
+    <section class="card" id="card-gas">
+      <div class="card-head"><h2>Gas (MQ)</h2><span class="badge" id="gasBadge">—</span></div>
+      <div class="value"><span class="num" id="gasVolts">—</span><span class="unit">V</span></div>
+      <div class="meter"><div id="gasMeter" style="background: var(--gasline)"></div></div>
+      <div class="meta">Raw ADC <span id="gasRaw">—</span> / 4095</div>
+      <canvas id="chart-gas"></canvas>
+      <p class="empty"></p>
+    </section>
+
+    <section class="card wide" id="card-accel">
+      <div class="card-head"><h2>Acceleration</h2><span class="badge" id="accelBadge">—</span></div>
+      <div class="axes">
+        <div class="axis"><div class="label"><i style="--c: var(--x)"></i>X</div><span class="num" id="ax">—</span><span class="unit">g</span></div>
+        <div class="axis"><div class="label"><i style="--c: var(--y)"></i>Y</div><span class="num" id="ay">—</span><span class="unit">g</span></div>
+        <div class="axis"><div class="label"><i style="--c: var(--z)"></i>Z</div><span class="num" id="az">—</span><span class="unit">g</span></div>
+        <div class="axis"><div class="label">|a|</div><span class="num" id="amag">—</span><span class="unit">g</span></div>
+      </div>
+      <canvas id="chart-accel"></canvas>
+      <p class="empty"></p>
+    </section>
+
+    <section class="card full" id="card-orient">
+      <div class="card-head"><h2>Orientation · GY-6500</h2><span class="badge" id="orientBadge">—</span></div>
+      <div class="orient">
+        <div class="stage" id="stage" title="Drag to look around, double-click to reset the view">
+          <div class="world">
+            <div id="ground"><div class="plane"></div></div>
+            <div id="board"></div>
+          </div>
+        </div>
+        <div class="readout">
+          <div class="key">Tilt from level</div>
+          <div class="value"><span class="num" id="tilt">—</span></div>
+          <div class="angles">
+            <div><div class="key">Roll (around X)</div><span class="num" id="roll">—</span></div>
+            <div><div class="key">Pitch (around Y)</div><span class="num" id="pitch">—</span></div>
+            <div><div class="key">Yaw (around Z)</div><span class="num" id="yaw">—</span></div>
+            <div><div class="key">Turn rate</div><span class="num" id="rate">—</span></div>
+          </div>
+          <svg class="level" viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="60" cy="60" r="56" style="fill: none; stroke: var(--border); stroke-width: 2"/>
+            <circle cx="60" cy="60" r="28" style="fill: none; stroke: var(--border); stroke-width: 1"/>
+            <path d="M60 6 V114 M6 60 H114" style="stroke: var(--border); stroke-width: 1"/>
+            <circle id="bubble" cx="60" cy="60" r="9" style="fill: var(--z); fill-opacity: .85"/>
+            <circle cx="60" cy="60" r="11" style="fill: none; stroke: var(--muted); stroke-width: 1.5"/>
+          </svg>
+          <p class="hint">The bubble drifts toward the raised side. Drag the model to look around; double-click resets the view. The board fuses its gyro with gravity, so the model follows fast movement and shows yaw too; yaw has no magnetic reference, so it creeps a little over minutes.</p>
+        </div>
+      </div>
+      <p class="empty"></p>
+    </section>
+  </main>
+
+  <footer>
+    <span>Last reading <b id="ago">—</b></span>
+    <span>Lines received <b id="lines">0</b></span>
+    <span>I2C errors <b id="i2c">0</b></span>
+    <span>Gyro clipped <b id="clip">0</b></span>
+  </footer>
+</div>
+
+<script>
+const WINDOW_MS = 60_000;
+const STALE_S = 5;
+const LOUD = 32000;
+
+// Which reading keys each card shows, and the hint when a sensor never reports
+const CARDS = {
+  'card-volume':   { keys: ['volume'],                       hint: 'Waiting for “Volume_Level:” lines from the board.' },
+  'card-climate':  { keys: ['temp', 'humidity'],             hint: 'No data yet. Uncomment the “Temp:” Serial.printf in main.cpp.' },
+  'card-gas':      { keys: ['gas_raw', 'gas_volts', 'gas'],  hint: 'No data yet. Uncomment the “Raw:” Serial.printf in main.cpp.' },
+  'card-accel':    { keys: ['ax', 'ay', 'az'],               hint: 'No data yet. Re-enable the MPU6500 code and its “Accel” print in main.cpp.' },
+  'card-orient':   { keys: ['qw', 'ax', 'ay', 'az'],         hint: 'Waiting for accelerometer data from the MPU6500.' },
+};
+
+const $ = id => document.getElementById(id);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const series = {};      // key -> [[performance.now(), value], ...]
+const seenStamp = {};
+let state = null;
+let selNode = null;     // null = follow the gateway
+let shownNode = null;
+
+// The cards show one node at a time. With a single board on a cable there is
+// exactly one, and the strip stays hidden.
+const nodeIds = () => Object.keys((state && state.nodes) || {}).sort((a, b) => a - b);
+function currentNode() {
+  const ids = nodeIds();
+  if (!ids.length) return null;
+  if (selNode !== null && ids.includes(selNode)) return selNode;
+  return ids.find(id => state.nodes[id].values.gateway) ?? ids[0];
+}
+const nodeData = () => {
+  const id = currentNode();
+  return (id !== null && state.nodes[id]) || { values: {}, updated: {} };
+};
+
+for (const [id, c] of Object.entries(CARDS)) $(id).querySelector('.empty').textContent = c.hint;
+
+function push(key, value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return;
+  (series[key] ||= []).push([performance.now(), value]);
+}
+
+function fmt(v, digits, signed = false) {
+  if (v == null || !Number.isFinite(v)) return '—';
+  const r = Number(v.toFixed(digits)) + 0;   // + 0 turns -0 into 0, so it never shows "+-0.00"
+  const s = r.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return signed && r >= 0 ? '+' + s : s;
+}
+
+function setBadge(el, text, kind) {
+  el.textContent = text;
+  el.className = 'badge' + (kind ? ' ' + kind : '');
+}
+
+function setStatus(kind, text) {
+  $('status').className = 'pill ' + kind;
+  $('statusText').textContent = text;
+}
+
+const es = new EventSource('/events');
+es.onmessage = e => {
+  state = JSON.parse(e.data);
+  const id = currentNode();
+  if (id !== shownNode) {
+    // Switched boards: the charts are holding another node's history.
+    shownNode = id;
+    for (const k of Object.keys(series)) delete series[k];
+    for (const k of Object.keys(seenStamp)) delete seenStamp[k];
+  }
+  const nd = nodeData();
+  for (const [key, stamp] of Object.entries(nd.updated)) {
+    if (seenStamp[key] !== stamp) { seenStamp[key] = stamp; push(key, nd.values[key]); }
+  }
+  renderNodeStrip();
+  render();
+};
+es.onerror = () => setStatus('alert', 'Dashboard server not running');
+
+// Rebuilt only when the set of nodes or the selection changes -- at 50 updates
+// a second, replacing this markup every frame would swallow the clicks.
+let stripKey = '';
+function renderNodeStrip() {
+  const ids = nodeIds(), cur = currentNode(), strip = $('nodeStrip');
+  const key = ids.join(',') + '|' + cur;
+  if (key === stripKey) return;
+  stripKey = key;
+  strip.hidden = ids.length < 2;
+  strip.innerHTML = ids.map(id => {
+    const v = state.nodes[id].values;
+    const via = v.gateway ? 'on USB' :
+                v.hops != null ? `${v.hops} hop${v.hops === 1 ? '' : 's'} away` : 'mesh';
+    return `<button class="node${id === cur ? ' on' : ''}" data-id="${id}">` +
+           `<b>Node ${id}</b><span>${via}</span><span class="ago" data-id="${id}">—</span></button>`;
+  }).join('');
+}
+$('nodeStrip').addEventListener('click', e => {
+  const b = e.target.closest('.node');
+  if (b) { selNode = b.dataset.id; stripKey = ''; renderNodeStrip(); }
+});
+
+function render() {
+  const v = nodeData().values;
+
+  const status = {
+    connected: ['ok', `Connected · ${state.port}`],
+    demo:      ['info', 'Demo data'],
+    no_board:  ['warn', 'Waiting for board. Plug in USB'],
+    busy:      ['alert', 'Serial port busy. Close the PlatformIO monitor'],
+    error:     ['alert', state.detail || 'Serial error'],
+    starting:  ['warn', 'Starting…'],
+  }[state.status] || ['warn', state.status];
+  setStatus(...status);
+
+  $('volume').textContent = fmt(v.volume, 0);
+  if (v.volume != null) setBadge($('loudBadge'), v.volume > LOUD ? 'Loud · LED on' : 'Quiet', v.volume > LOUD ? 'alert' : 'ok');
+
+  $('temp').textContent = fmt(v.temp, 1);
+  $('humidity').textContent = fmt(v.humidity, 0);
+
+  $('gasVolts').textContent = fmt(v.gas_volts, 2);
+  $('gasRaw').textContent = fmt(v.gas_raw, 0);
+  $('gasMeter').style.width = ((v.gas_raw ?? 0) / 4095 * 100) + '%';
+  if (v.gas != null) setBadge($('gasBadge'), v.gas ? 'Gas detected' : 'Clean', v.gas ? 'alert' : 'ok');
+
+  for (const k of ['ax', 'ay', 'az']) $(k).textContent = fmt(v[k], 2, true);
+  const mag = [v.ax, v.ay, v.az].every(Number.isFinite) ? Math.hypot(v.ax, v.ay, v.az) : null;
+  $('amag').textContent = fmt(mag, 2);
+  if (mag != null) {
+    // Turning in place barely changes |a|, so the accelerometer alone calls a
+    // brisk rotation "Still". Ask the gyro as well when the board sends it.
+    const turn = [v.gx, v.gy, v.gz].every(Number.isFinite) ? Math.hypot(v.gx, v.gy, v.gz) : 0;
+    const jolt = Math.abs(mag - 1) > 0.15 || turn > 15;   // resting reads ~1 g
+    setBadge($('accelBadge'), jolt ? 'Movement' : 'Still', jolt ? 'alert' : 'ok');
+  }
+
+  $('lines').textContent = state.lines.toLocaleString('en-US');
+  $('i2c').textContent = state.i2c_errors.toLocaleString('en-US');
+  // Non-zero means the node was spun harder than the gyro's range, so the model
+  // will have come up short of where it really ended up.
+  $('clip').textContent = (v.gyro_clipped ?? 0).toLocaleString('en-US');
+  $('clip').style.color = v.gyro_clipped ? 'var(--alert)' : '';
+}
+
+// Card freshness and the "last reading" clock tick even when no data arrives
+setInterval(() => {
+  if (!state) return;
+  const now = Date.now() / 1000;
+  let newest = 0;
+  const upd = nodeData().updated;
+  for (const [id, c] of Object.entries(CARDS)) {
+    const stamps = c.keys.map(k => upd[k]).filter(Boolean);
+    const last = stamps.length ? Math.max(...stamps) : 0;
+    newest = Math.max(newest, last);
+    $(id).classList.toggle('nodata', !last);
+    $(id).classList.toggle('stale', !!last && now - last > STALE_S);
+  }
+  const ago = now - newest;
+  $('ago').textContent = !newest ? '—' : ago < 1 ? 'just now' : ago < 90 ? `${ago.toFixed(0)} s ago` : `${(ago / 60).toFixed(0)} min ago`;
+
+  for (const el of document.querySelectorAll('#nodeStrip .ago')) {
+    const n = state.nodes[el.dataset.id];
+    const dt = n && n.last ? now - n.last : null;
+    el.textContent = dt == null ? '—' : dt < 1 ? 'live' : `${dt.toFixed(0)} s ago`;
+    el.closest('.node').classList.toggle('stale', dt == null || dt > 5);
+  }
+}, 250);
+
+function drawChart(id, lines, opt = {}) {
+  const cv = $(id), dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const now = performance.now();
+  let lo = Infinity, hi = -Infinity;
+  for (const { key } of lines) {
+    const s = series[key] || [];
+    while (s.length > 1 && s[1][0] < now - WINDOW_MS) s.shift();
+    for (const [, val] of s) { lo = Math.min(lo, val); hi = Math.max(hi, val); }
+  }
+  if (!Number.isFinite(lo)) return;
+  if (opt.floor != null) lo = Math.min(lo, opt.floor);
+  if (opt.threshold != null) hi = Math.max(hi, opt.threshold);
+  if (hi - lo < opt.span) { const mid = (hi + lo) / 2; lo = mid - opt.span / 2; hi = mid + opt.span / 2; }
+  if (opt.floor != null) lo = Math.max(lo, opt.floor);
+  const pad = (hi - lo) * 0.1;
+  lo -= opt.floor != null && lo <= opt.floor ? 0 : pad; hi += pad;
+
+  const top = 6, bottom = h - 6;
+  const X = t => w - (now - t) / WINDOW_MS * w;
+  const Y = val => bottom - (val - lo) / (hi - lo) * (bottom - top);
+
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = css('--grid');
+  for (let i = 0; i <= 2; i++) {
+    const y = Math.round(top + (bottom - top) * i / 2) + .5;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  if (opt.threshold != null) {
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = css('--alert');
+    const y = Math.round(Y(opt.threshold)) + .5;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  for (const { key, color } of lines) {
+    const s = series[key];
+    if (!s || !s.length) continue;
+    const c = css(color);
+    ctx.beginPath();
+    s.forEach(([t, val], i) => i ? ctx.lineTo(X(t), Y(val)) : ctx.moveTo(X(t), Y(val)));
+    ctx.strokeStyle = c; ctx.lineWidth = 1.75; ctx.lineJoin = 'round'; ctx.stroke();
+
+    if (lines.length === 1) {       // soft fill under single-series charts
+      ctx.lineTo(X(s[s.length - 1][0]), bottom); ctx.lineTo(X(s[0][0]), bottom); ctx.closePath();
+      const g = ctx.createLinearGradient(0, top, 0, bottom);
+      g.addColorStop(0, c + '33'); g.addColorStop(1, c + '00');
+      ctx.fillStyle = g; ctx.fill();
+    }
+    const [lt, lv] = s[s.length - 1];
+    ctx.beginPath(); ctx.arc(X(lt), Y(lv), 3, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
+  }
+
+  // Axis labels sit on a card-coloured chip so grid and threshold lines don't cross the text
+  ctx.font = '11px -apple-system, system-ui, sans-serif';
+  for (const [text, y, base] of [[opt.label(hi), top + 1, 'top'], [opt.label(lo), bottom - 1, 'bottom']]) {
+    ctx.textBaseline = base;
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = css('--card');
+    ctx.fillRect(0, base === 'top' ? y - 1 : y - 14, tw + 8, 15);
+    ctx.fillStyle = css('--muted');
+    ctx.fillText(text, 3, y);
+  }
+}
+
+(function frame() {
+  drawChart('chart-volume', [{ key: 'volume', color: '--sound' }],
+            { floor: 0, threshold: LOUD, span: 1000, label: v => Math.round(v).toLocaleString('en-US') });
+  drawChart('chart-temp', [{ key: 'temp', color: '--temp' }], { span: 2, label: v => v.toFixed(1) + ' °C' });
+  drawChart('chart-humidity', [{ key: 'humidity', color: '--hum' }], { span: 10, label: v => v.toFixed(0) + '%' });
+  drawChart('chart-gas', [{ key: 'gas_volts', color: '--gasline' }], { floor: 0, span: 0.5, label: v => v.toFixed(2) + ' V' });
+  drawChart('chart-accel', [{ key: 'ax', color: '--x' }, { key: 'ay', color: '--y' }, { key: 'az', color: '--z' }],
+            { span: 0.5, label: v => v.toFixed(2) + ' g' });
+  requestAnimationFrame(frame);
+})();
+
+// ---------- 3D GY-6500 ----------
+// Built from CSS 3D faces, no libraries. The board's local CSS frame is the chip's
+// axes with y flipped (CSS y points down): css x = X, css y = -Y, css z = +Z (chip side up).
+const MM = 10;                                     // px per mm
+const PCB = { w: 15.5 * MM, d: 25.5 * MM, h: 1.6 * MM };   // portrait like the real board: 15.5 mm wide, 25.5 mm tall
+const PITCH = 2.54 * MM;
+const PINS = ['VCC', 'GND', 'SCL', 'SDA', 'EDA', 'ECL', 'AD0', 'INT', 'NCS', 'FSYNC'];   // top (+Y) to bottom
+const PIN_X = 1.5 * MM;                            // pad column hugs the left (-X) edge
+const padY = i => (PCB.d - (PINS.length - 1) * PITCH) / 2 + i * PITCH;
+// Parts are placed in top-face px from the board's top-left corner; this converts to board-local CSS coordinates
+const local = (fx, fy) => ({ x: fx - PCB.w / 2, y: fy - PCB.d / 2 });
+
+const SHADED = [];                                // faces lit live: { el, n: outward normal in chip axes }
+
+function box(parent, { x = 0, y = 0, z = 0, w, d, h, top, side, end, bottom, omit = [], shade = false, topClass = '', topHTML = '', bottomHTML = '' }) {
+  const faces = [   // name, width, height, placement, colour, outward normal in chip axes (X, Y, Z)
+    ['top',    w, d, `translateZ(${h / 2}px)`,                 top,             [0, 0, 1]],
+    ['bottom', w, d, `rotateY(180deg) translateZ(${h / 2}px)`, bottom || side,  [0, 0, -1]],
+    ['right',  h, d, `rotateY(90deg) translateZ(${w / 2}px)`,  end || side,     [1, 0, 0]],
+    ['left',   h, d, `rotateY(-90deg) translateZ(${w / 2}px)`, end || side,     [-1, 0, 0]],
+    ['back',   w, h, `rotateX(90deg) translateZ(${d / 2}px)`,  side,            [0, 1, 0]],
+    ['front',  w, h, `rotateX(-90deg) translateZ(${d / 2}px)`, side,            [0, -1, 0]],
+  ];
+  for (const [name, fw, fh, rot, bg, normal] of faces) {
+    if (omit.includes(name)) continue;
+    const f = document.createElement('div');
+    f.className = 'face' + (name === 'top' && topClass ? ' ' + topClass : '') + (shade ? ' shaded' : '');
+    if (shade) SHADED.push({ el: f, n: normal, last: '' });
+    f.style.cssText = `width:${fw}px;height:${fh}px;margin:${-fh / 2}px 0 0 ${-fw / 2}px;` +
+                      (bg ? `background:${bg};` : '') + `transform:translate3d(${x}px,${y}px,${z}px) ${rot}`;
+    if (name === 'top') f.innerHTML = topHTML;
+    if (name === 'bottom') f.innerHTML = bottomHTML;
+    parent.appendChild(f);
+  }
+}
+
+(function buildBoard() {
+  const b = $('board');
+  const at = (mmX, mmY) => `left:${mmX * MM}px;top:${mmY * MM}px`;
+  const smd = (kind, mmX, mmY, vertical = false) => `<i class="smd ${kind}${vertical ? ' vert' : ''}" style="${at(mmX, mmY)}"></i>`;
+
+  const pads = PINS.map((name, i) =>
+    `<i class="pad" style="left:${PIN_X}px;top:${padY(i)}px"></i>` +
+    `<b class="pin-label" style="left:${PIN_X + 1.3 * MM}px;top:${padY(i)}px">${name}</b>`).join('');
+  // the bottom face is mirrored left-right by its rotateY(180deg)
+  const padsBottom = PINS.map((_, i) => `<i class="pad" style="left:${PCB.w - PIN_X}px;top:${padY(i)}px"></i>`).join('');
+
+  // Layout traced from a photo of the real board, in mm from its top-left corner (pins on the left)
+  box(b, {
+    w: PCB.w, d: PCB.d, h: PCB.h, side: '#2556b6', bottom: '#2659bc', shade: true, topClass: 'pcb-top',
+    topHTML: `
+      <i class="hole" style="${at(12.9, 2.6)}"></i>
+      <i class="hole" style="${at(12.9, 22.9)}"></i>
+      <span class="silk-model" style="${at(14.55, 12.7)}">MPU-9250/6500/9255.</span>
+      <i class="lead" style="${at(6.2, 2.05)}"></i><i class="lead" style="${at(6.2, 3.0)}"></i><i class="lead" style="${at(6.2, 3.95)}"></i>
+      <i class="lead" style="${at(8.2, 2.05)}"></i><i class="lead" style="${at(8.2, 3.95)}"></i>
+      ${smd('cap', 9.9, 6.6)}${smd('cap', 9.9, 8.4)}
+      ${smd('res', 6.4, 7.9)}${smd('cap', 6.4, 9.5)}
+      ${smd('cap', 7.4, 14.9)}${smd('res', 10.6, 15.3, true)}${smd('cap', 8.2, 17.1)}
+      <svg class="silk-axes" style="${at(6.9, 18.2)}" width="44" height="44" viewBox="0 0 44 44">
+        <g fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 30 V8 M10.5 11.5 L14 8 L17.5 11.5"/>
+          <path d="M14 30 H36 M32.5 26.5 L36 30 L32.5 33.5"/>
+          <circle cx="14" cy="30" r="2.6"/>
+        </g>
+        <g fill="#fff" font-size="9" font-weight="700" font-family="ui-monospace, Menlo, monospace">
+          <text x="3" y="13">Y</text><text x="38" y="28">X</text><text x="3" y="42">Z</text>
+        </g>
+      </svg>
+      ${pads}`,
+    bottomHTML: `<div class="pcb-bottom">${padsBottom}</div>`,
+  });
+
+  const part = (mmX, mmY, o) => box(b, { ...local(mmX * MM, mmY * MM), omit: ['bottom'], shade: true, ...o });
+  part(9.3, 11.5, { z: PCB.h / 2 + 4.5, w: 34, d: 34, h: 9, side: '#25272b', topClass: 'chip-top pin1', topHTML: '<span>MPU<br>6500</span>' });
+  part(7.2, 3.0,  { z: PCB.h / 2 + 5,   w: 16, d: 29, h: 10, side: '#25272b', topClass: 'chip-top' });           // 3.3 V regulator
+  part(12.7, 11.4, { z: PCB.h / 2 + 6,  w: 15, d: 24, h: 12, top: '#e9b93a', side: '#d6a52c', topHTML: '<i class="tant-band"></i>' });  // tantalum cap
+
+  // male header under the left edge: plastic strip plus 10 gold pins
+  const strip = 2.5 * MM;
+  box(b, { ...local(PIN_X, PCB.d / 2), z: -PCB.h / 2 - strip / 2, w: strip, d: PINS.length * PITCH, h: strip,
+           side: '#2a2a2a', bottom: '#2a2a2a', shade: true, omit: ['top'] });
+  const pinTop = PCB.h / 2 + 7, pinBottom = -PCB.h / 2 - strip - 6 * MM;
+  PINS.forEach((_, i) => box(b, { ...local(PIN_X, padY(i)), z: (pinTop + pinBottom) / 2, w: 6, d: 6, h: pinTop - pinBottom,
+                                   top: '#f3cf6a', side: '#cf9f35', end: '#a97d22' }));
+})();
+
+const DEG = Math.PI / 180;
+const mul = (A, B) => A.map(r => [0, 1, 2].map(j => r[0] * B[0][j] + r[1] * B[1][j] + r[2] * B[2][j]));
+const rotX = a => { const c = Math.cos(a), s = Math.sin(a); return [[1, 0, 0], [0, c, -s], [0, s, c]]; };
+const rotZ = a => { const c = Math.cos(a), s = Math.sin(a); return [[c, -s, 0], [s, c, 0], [0, 0, 1]]; };
+const FLIP_Y = [[1, 0, 0], [0, -1, 0], [0, 0, 1]];
+const matrix3d = (m, k) => `matrix3d(${[0, 1, 2].flatMap(j => [m[0][j] * k, m[1][j] * k, m[2][j] * k, 0]).join(',')},0,0,0,1)`;
+
+const CAMERA = { az: 0, el: 55 };                 // degrees; az 0 = straight on, pin row facing you, X arrow pointing right
+const LIGHT = (v => v.map(c => c / Math.hypot(...v)))([-0.45, 0.75, 0.6]);                // degrees: turn around vertical, height above horizon
+const cam = { ...CAMERA };
+const gSmooth = [0, 0, 1];                         // low-passed accel vector, starts level
+const qShown = [1, 0, 0, 0];                       // what the model is drawn at, chased toward qTarget
+let lastFrame = performance.now();
+
+// A quaternion (w, x, y, z) as the rotation that takes chip axes to world axes.
+// Its third row is where the chip thinks "up" is, which is what the tilt
+// readout and the bubble level want, so accel-only mode can share the code.
+const quatToR = ([w, x, y, z]) => [
+  [1 - 2 * (y * y + z * z), 2 * (x * y - w * z),     2 * (x * z + w * y)],
+  [2 * (x * y + w * z),     1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+  [2 * (x * z - w * y),     2 * (y * z + w * x),     1 - 2 * (x * x + y * y)],
+];
+
+// Shortest-arc step toward q, so the model glides between the 50 Hz updates
+// instead of stepping. Negate first if the two are on opposite hemispheres:
+// q and -q are the same orientation but interpolate the long way round.
+function chaseQuat(out, q, k) {
+  let dot = out[0] * q[0] + out[1] * q[1] + out[2] * q[2] + out[3] * q[3];
+  const sign = dot < 0 ? -1 : 1;
+  let n = 0;
+  for (let i = 0; i < 4; i++) { out[i] += (sign * q[i] - out[i]) * k; n += out[i] * out[i]; }
+  n = Math.sqrt(n) || 1;
+  for (let i = 0; i < 4; i++) out[i] /= n;
+}
+const shown = {};
+const setText = (id, text) => { if (shown[id] !== text) { shown[id] = text; $(id).textContent = text; } };
+
+(function orient(now) {
+  const dt = Math.min(0.1, (now - lastFrame) / 1000);
+  lastFrame = now;
+  const v = state ? nodeData().values : null;
+  const fused = !!v && [v.qw, v.qx, v.qy, v.qz].every(Number.isFinite);
+  const live = fused || (!!v && [v.ax, v.ay, v.az].every(Number.isFinite));
+
+  if (fused) {
+    // The board already did the work: it integrates its gyro at 200 Hz and
+    // leans on gravity only when gravity is the only thing the accelerometer
+    // can see. Chase it fast -- the estimate is already smooth, this is just
+    // covering the gaps between serial updates.
+    // 25 ms, not 40: the board sends ~60 quaternions a second and each one is
+    // already filtered, so anything slower here is just added lag. During a
+    // fast spin this smoothing IS the visible gap between board and model.
+    chaseQuat(qShown, [v.qw, v.qx, v.qy, v.qz], 1 - Math.exp(-dt / 0.025));
+  } else if (live) {
+    // Fallback for firmware that only prints Accel lines: gravity alone gives
+    // roll and pitch, needs heavy smoothing, and cannot know yaw at all.
+    const k = 1 - Math.exp(-dt / 0.12);            // ~120 ms smoothing so jitter doesn't shake the model
+    [v.ax, v.ay, v.az].forEach((a, i) => gSmooth[i] += (a - gSmooth[i]) * k);
+    const m = Math.hypot(...gSmooth) || 1;
+    const [ax, ay, az] = gSmooth.map(c => c / m);
+    const r = Math.atan2(ay, az), p = Math.atan2(-ax, Math.hypot(ay, az));
+    const cr = Math.cos(r / 2), sr = Math.sin(r / 2);
+    const cp = Math.cos(p / 2), sp = Math.sin(p / 2);
+    qShown[0] = cp * cr; qShown[1] = cp * sr; qShown[2] = sp * cr; qShown[3] = -sp * sr;
+  }
+
+  const R = quatToR(qShown);
+  const [gx, gy, gz] = R[2];                       // chip-frame "up": the third row
+  const roll = Math.atan2(gy, gz);
+  const pitch = Math.atan2(-gx, Math.hypot(gy, gz));
+  const yaw = Math.atan2(R[1][0], R[0][0]);
+  const V = mul(rotX((cam.el - 90) * DEG), rotZ(cam.az * DEG));
+  const stage = $('stage');
+  const scale = Math.min(1.35, stage.clientWidth / 480, stage.clientHeight / 330);
+  $('board').style.transform = matrix3d(mul(FLIP_Y, mul(mul(V, R), FLIP_Y)), scale);
+  $('ground').style.transform = matrix3d(mul(FLIP_Y, mul(V, FLIP_Y)), scale);
+
+  // Lambert shading against a light above-left of the camera (view axes: x right, y up, z toward you)
+  const VR = mul(V, R);
+  for (const f of SHADED) {
+    const [nx, ny, nz] = [0, 1, 2].map(i => VR[i][0] * f.n[0] + VR[i][1] * f.n[1] + VR[i][2] * f.n[2]);
+    const lit = Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
+    const shade = (0.6 * (1 - lit)).toFixed(2);
+    if (shade !== f.last) { f.last = shade; f.el.style.setProperty('--shade', shade); }
+  }
+
+  if (live) {
+    const tilt = Math.acos(Math.max(-1, Math.min(1, gz))) / DEG;
+    setText('tilt', tilt.toFixed(0) + '°');
+    setText('roll', fmt(roll / DEG, 0, true) + '°');
+    setText('pitch', fmt(pitch / DEG, 0, true) + '°');
+    setText('yaw', fused ? fmt(yaw / DEG, 0, true) + '°' : '—');
+    const rate = [v.gx, v.gy, v.gz].every(Number.isFinite) ? Math.hypot(v.gx, v.gy, v.gz) : null;
+    setText('rate', rate == null ? '—' : fmt(rate, 0) + ' °/s');
+
+    // bubble: toward the raised side, full deflection at 45 degrees
+    const horiz = Math.hypot(gx, gy);
+    const reach = Math.min(1, tilt / 45) * 46;
+    $('bubble').setAttribute('cx', (60 + (horiz > 1e-6 ? gx / horiz : 0) * reach).toFixed(1));
+    $('bubble').setAttribute('cy', (60 - (horiz > 1e-6 ? gy / horiz : 0) * reach).toFixed(1));
+
+    const [label, kind] = gz < 0 ? ['Upside down', 'alert'] : tilt < 3 ? ['Level', 'ok'] : tilt < 30 ? ['Tilted', 'ok'] : ['Steep', 'alert'];
+    const badge = $('orientBadge');
+    if (badge.textContent !== label) setBadge(badge, label, kind);
+  }
+  requestAnimationFrame(orient);
+})(performance.now());
+
+(function orbit() {
+  const stage = $('stage');
+  let drag = null;
+  stage.addEventListener('pointerdown', e => {
+    drag = { x: e.clientX, y: e.clientY, az: cam.az, el: cam.el };
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add('dragging');
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!drag) return;
+    cam.az = drag.az + (e.clientX - drag.x) * 0.4;
+    cam.el = Math.max(0, Math.min(90, drag.el + (e.clientY - drag.y) * 0.3));
+  });
+  const end = () => { drag = null; stage.classList.remove('dragging'); };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  stage.addEventListener('dblclick', () => Object.assign(cam, CAMERA));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+#include <Arduino.h>
+#include <DHT.h>
+#include <Wire.h> 
+
+#define DHT_PIN  4
+#define DHT_TYPE DHT11 
+#define led 5  
+#define MQ_AOUT 6
+#define MQ_DOUT 7
+#define MPU_ADDR 0x68
+#define SDA_PIN 8
+#define SCL_PIN 9
+#define REG_WHO_AM_I 0x75
+#define REG_ACCEL_XOUT 0x3B
+
+DHT dht(DHT_PIN, DHT_TYPE);
+void setup() {
+  Serial.begin(115200); 
+  delay(1000);           
+
+  dht.begin();   
+  pinMode(led, OUTPUT);     
+  pinMode(MQ_DOUT, INPUT);   
+}
+
+void loop() {
+  delay(2000);
+  float humidity    = dht.readHumidity();
+  float temperature = dht.readTemperature();    
+  
+  int raw = analogRead(MQ_AOUT);
+  float volts = analogReadMilliVolts(MQ_AOUT) / 1000.0;
+  bool gas = !digitalRead(MQ_DOUT);
+
+  if (humidity >= 40) {
+    analogWrite(led, 255);
+  } else {
+    analogWrite(led, 0);
+  }
+  Serial.printf("Temp: %.1f C   Humidity: %.1f %%\n", temperature, humidity);
+  Serial.printf("Raw: %4d   Volts: %.2f V   %s\n\n", raw, volts, gas ? "GAS" : "clean");
+}
